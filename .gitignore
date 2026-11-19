@@ -37,3 +37,5 @@ next-env.d.ts
 # local uploads storage
 /storage/uploads/*
 !/storage/uploads/.gitkeep
+
+src/components/admin_corrupted/

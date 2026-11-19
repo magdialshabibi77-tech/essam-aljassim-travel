@@ -253,6 +253,7 @@ export const mediaFiles = pgTable("media_files", {
   size: integer("size").notNull().default(0),
   url: text("url").notNull(),
   alt: text("alt").notNull().default(""),
+  data: text("data"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

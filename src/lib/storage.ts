@@ -2,6 +2,7 @@ import "server-only";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { eq, desc } from "drizzle-orm";
 import { db } from "@/db";
 import { mediaFiles, type MediaFile } from "@/db/schema";
 
@@ -15,7 +16,11 @@ function resolveDir() {
 }
 
 async function ensureDir(dir: string) {
-  await fs.mkdir(dir, { recursive: true });
+  try {
+    await fs.mkdir(dir, { recursive: true });
+  } catch {
+    /* Read-only filesystem in serverless environments */
+  }
 }
 
 function extensionFor(type: string, originalName: string) {
@@ -57,9 +62,6 @@ export async function saveUpload(
     return { ok: false, error: "الملف غير صالح أو تالف" };
   }
 
-  const dir = resolveDir();
-  await ensureDir(dir);
-
   const cleanOriginal = sanitizeFileName(file.name);
   const fileName = `${Date.now()}-${randomUUID().slice(0, 8)}${extensionFor(file.type, cleanOriginal)}`;
   const buffer = Buffer.from(await file.arrayBuffer());
@@ -69,7 +71,16 @@ export async function saveUpload(
     return { ok: false, error: "محتوى الملف ليس صورة صالحة" };
   }
 
-  await fs.writeFile(path.join(/*turbopackIgnore: true*/ dir, fileName), buffer);
+  // محاولة الحفظ على القرص المحلي إن كان متاحاً (بيئة التطوير أو سيرفر مخصص)
+  try {
+    const dir = resolveDir();
+    await ensureDir(dir);
+    await fs.writeFile(path.join(/*turbopackIgnore: true*/ dir, fileName), buffer);
+  } catch {
+    /* بيئة Serverless مثل Vercel لا تسمح بالكتابة على القرص المحلي، يتم الحفظ في قاعدة البيانات */
+  }
+
+  const base64Data = buffer.toString("base64");
 
   const [record] = await db
     .insert(mediaFiles)
@@ -80,6 +91,7 @@ export async function saveUpload(
       size: file.size,
       url: `/api/files/${fileName}`,
       alt: options.alt?.slice(0, 200) ?? "",
+      data: base64Data,
     })
     .returning();
 
@@ -113,8 +125,25 @@ function isKnownImageSignature(buffer: Buffer) {
   return false;
 }
 
-export async function readStoredFile(fileName: string) {
+export async function readStoredFile(fileName: string): Promise<Buffer | null> {
   if (!/^[A-Za-z0-9._-]+$/.test(fileName)) return null;
+
+  // 1. القراءة من قاعدة البيانات السحابية (دائمة وتعمل 100% على Vercel و Serverless)
+  try {
+    const rows = await db
+      .select({ data: mediaFiles.data })
+      .from(mediaFiles)
+      .where(eq(mediaFiles.fileName, fileName))
+      .limit(1);
+
+    if (rows[0]?.data) {
+      return Buffer.from(rows[0].data, "base64");
+    }
+  } catch (err) {
+    console.error("DB read file error:", err);
+  }
+
+  // 2. المحاولة البديلة من القرص المحلي إن وجد
   const dir = resolveDir();
   try {
     const buffer = await fs.readFile(path.join(/*turbopackIgnore: true*/ dir, fileName));
@@ -130,10 +159,24 @@ export async function deleteStoredFile(fileName: string) {
   try {
     await fs.unlink(path.join(/*turbopackIgnore: true*/ dir, fileName));
   } catch {
-    /* الملف غير موجود */
+    /* الملف غير موجود أو القرص للقراءة فقط */
   }
 }
 
 export async function listMedia(limit = 200) {
-  return db.select().from(mediaFiles).orderBy(mediaFiles.id).limit(limit);
+  return db
+    .select({
+      id: mediaFiles.id,
+      originalName: mediaFiles.originalName,
+      fileName: mediaFiles.fileName,
+      mimeType: mediaFiles.mimeType,
+      size: mediaFiles.size,
+      url: mediaFiles.url,
+      alt: mediaFiles.alt,
+      data: mediaFiles.data,
+      createdAt: mediaFiles.createdAt,
+    })
+    .from(mediaFiles)
+    .orderBy(desc(mediaFiles.id))
+    .limit(limit);
 }
