@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 import { db } from "@/db";
 import { adminUsers } from "@/db/schema";
 
@@ -81,10 +81,15 @@ export function unauthorized() {
 }
 
 export async function authenticate(email: string, password: string) {
+  const clean = email.trim().toLowerCase();
   const rows = await db
     .select()
     .from(adminUsers)
-    .where(eq(adminUsers.email, email.trim().toLowerCase()))
+    .where(
+      clean.includes("@")
+        ? eq(adminUsers.email, clean)
+        : or(eq(adminUsers.email, clean), eq(adminUsers.email, `${clean}@essam-aljassim.com`)),
+    )
     .limit(1);
   const user = rows[0];
   if (!user) return null;

@@ -19,7 +19,7 @@ export default function LoginForm({ officeName }: { officeName: string }) {
       const response = await fetch("/api/admin/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: email.trim(), password }),
       });
       const data = (await response.json()) as { ok: boolean; error?: string };
       if (!response.ok || !data.ok) {
@@ -56,10 +56,15 @@ export default function LoginForm({ officeName }: { officeName: string }) {
             </label>
             <input
               id="email"
-              type="email"
+              type="text"
+              inputMode="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               className="field"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              placeholder="magdyalshabibi77@gmail.com"
               dir="ltr"
               autoComplete="username"
               required
@@ -72,6 +77,9 @@ export default function LoginForm({ officeName }: { officeName: string }) {
             <input
               id="password"
               type="password"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               className="field"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -80,6 +88,9 @@ export default function LoginForm({ officeName }: { officeName: string }) {
               required
             />
           </div>
+          <p className="text-[12px] text-navy/60">
+            * تنبيه: الدخول مباشر بكلمة المرور، لا يتم إرسال أي رمز تحقق إلى البريد.
+          </p>
           {error ? (
             <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">{error}</p>
           ) : null}
