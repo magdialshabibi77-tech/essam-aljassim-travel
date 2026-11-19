@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { compressImage } from "@/lib/client-image";
 
 export type MediaItem = {
   id: number;
@@ -26,17 +27,29 @@ export default function MediaManager({ initial }: { initial: MediaItem[] }) {
     setNotice("");
     try {
       const formData = new FormData();
-      Array.from(files).forEach((file) => formData.append("file", file));
+      for (const rawFile of Array.from(files)) {
+        const file = await compressImage(rawFile);
+        formData.append("file", file);
+      }
+
       const response = await fetch("/api/admin/media", { method: "POST", body: formData });
-      const data = (await response.json()) as { ok: boolean; error?: string; files?: MediaItem[] };
+      const text = await response.text();
+      let data: { ok: boolean; error?: string; files?: MediaItem[] };
+      try {
+        data = JSON.parse(text);
+      } catch {
+        setError(`استجابة غير متوقعة من السيرفر (${response.status})`);
+        return;
+      }
+
       if (!response.ok || !data.ok) {
-        setError(data.error || "تعذر رفع الصور");
+        setError(data.error || `تعذر رفع الصور (${response.status})`);
         return;
       }
       setItems((prev) => [...(data.files ?? []), ...prev]);
       setNotice("تم رفع الصور بنجاح");
-    } catch {
-      setError("تعذر رفع الصور");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "تعذر رفع الصور");
     } finally {
       setUploading(false);
       if (inputRef.current) inputRef.current.value = "";

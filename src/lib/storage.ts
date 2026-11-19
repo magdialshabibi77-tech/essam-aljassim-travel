@@ -52,22 +52,35 @@ export async function saveUpload(
   if (!file || typeof file === "string") {
     return { ok: false, error: "لم يتم إرسال أي ملف" };
   }
-  if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-    return { ok: false, error: `نوع الملف غير مدعوم (${file.type}). الصيغ المسموحة: JPG, PNG, WEBP, GIF, SVG` };
+
+  let mime = (file.type || "").toLowerCase().trim();
+  const ext = path.extname(file.name || "").toLowerCase();
+
+  // تصحيح نوع الملف إذا لم يكن مرسلاً بدقة من المتصفح
+  if (!mime || mime === "application/octet-stream") {
+    if (ext === ".jpg" || ext === ".jpeg") mime = "image/jpeg";
+    else if (ext === ".png") mime = "image/png";
+    else if (ext === ".webp") mime = "image/webp";
+    else if (ext === ".gif") mime = "image/gif";
+    else if (ext === ".svg") mime = "image/svg+xml";
+    else if (ext === ".avif") mime = "image/avif";
+    else if (ext === ".ico") mime = "image/x-icon";
+    else mime = "image/jpeg";
   }
+
   if (file.size > MAX_UPLOAD_BYTES) {
     return { ok: false, error: "حجم الصورة يتجاوز الحد المسموح (6 ميغابايت)" };
   }
-  if (file.size < 64) {
-    return { ok: false, error: "الملف غير صالح أو تالف" };
+  if (file.size < 32) {
+    return { ok: false, error: "الملف غير صالح أو فارغ" };
   }
 
   const cleanOriginal = sanitizeFileName(file.name);
-  const fileName = `${Date.now()}-${randomUUID().slice(0, 8)}${extensionFor(file.type, cleanOriginal)}`;
+  const fileName = `${Date.now()}-${randomUUID().slice(0, 8)}${extensionFor(mime, cleanOriginal)}`;
   const buffer = Buffer.from(await file.arrayBuffer());
 
-  // تحقق من التوقيع الحقيقي للملف وليس الاعتماد على نوع MIME فقط
-  if (!isKnownImageSignature(buffer)) {
+  // تحقق من صلاحية الصورة
+  if (!isKnownImageSignature(buffer) && !mime.startsWith("image/")) {
     return { ok: false, error: "محتوى الملف ليس صورة صالحة" };
   }
 
@@ -87,7 +100,7 @@ export async function saveUpload(
     .values({
       originalName: cleanOriginal,
       fileName,
-      mimeType: file.type,
+      mimeType: mime,
       size: file.size,
       url: `/api/files/${fileName}`,
       alt: options.alt?.slice(0, 200) ?? "",
@@ -100,28 +113,33 @@ export async function saveUpload(
 
 function isKnownImageSignature(buffer: Buffer) {
   const len = buffer.length;
-  if (len < 12) return false;
+  if (len < 4) return false;
   const b0 = buffer[0];
   const b1 = buffer[1];
-  const b2 = buffer[2];
-  const b3 = buffer[3];
-  if (b0 === 0xff && b1 === 0xd8 && b2 === 0xff) return true; // jpeg
-  if (b0 === 0x89 && b1 === 0x50 && b2 === 0x4e && b3 === 0x47) return true; // png
-  if (b0 === 0x47 && b1 === 0x49 && b2 === 0x46) return true; // gif
-  if (b0 === 0x3c && b1 === 0x3f && b2 === 0x78 && b3 === 0x6d) return true; // <?xm (svg)
+  // JPEG: Starts with 0xFF, 0xD8
+  if (b0 === 0xff && b1 === 0xd8) return true;
+  // PNG: Starts with 0x89, 0x50, 0x4E, 0x47
+  if (b0 === 0x89 && b1 === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) return true;
+  // GIF: Starts with GIF
+  if (b0 === 0x47 && b1 === 0x49 && buffer[2] === 0x46) return true;
+  // SVG: Starts with <svg or <?xml
   if (
     buffer.slice(0, 4).toString("ascii").startsWith("<svg") ||
-    buffer.slice(0, 12).toString("ascii").includes("<svg")
+    buffer.slice(0, 12).toString("ascii").includes("<svg") ||
+    buffer.slice(0, 5).toString("ascii").startsWith("<?xml")
   )
     return true;
-  const brand = buffer.slice(4, 8).toString("ascii");
-  if (brand === "ftyp") return true; // avif / webp container
+  // WebP / RIFF container
   if (
     buffer.slice(0, 4).toString("ascii") === "RIFF" &&
     buffer.slice(8, 12).toString("ascii") === "WEBP"
   )
     return true;
-  if (b0 === 0x00 && b1 === 0x00 && b2 === 0x01 && b3 === 0x00) return true; // ico
+  // AVIF / ISO BMFF container
+  const brand = buffer.slice(4, 8).toString("ascii");
+  if (brand === "ftyp") return true;
+  // ICO
+  if (b0 === 0x00 && b1 === 0x00 && buffer[2] === 0x01 && buffer[3] === 0x00) return true;
   return false;
 }
 

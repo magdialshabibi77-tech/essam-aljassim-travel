@@ -38,7 +38,8 @@ export async function POST(request: Request) {
     return Response.json({ ok: true, files: saved, file: saved[0] });
   } catch (error) {
     console.error("upload error", error);
-    return Response.json({ ok: false, error: "تعذر رفع الملف" }, { status: 500 });
+    const detail = error instanceof Error ? error.message : String(error);
+    return Response.json({ ok: false, error: `خطأ في معالجة الملف: ${detail}` }, { status: 500 });
   }
 }
 

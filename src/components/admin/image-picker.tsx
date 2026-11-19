@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { compressImage } from "@/lib/client-image";
 
 type MediaItem = { id: number; url: string; originalName: string; mimeType: string; alt: string };
 
@@ -42,23 +43,30 @@ export default function ImagePicker({ label, value, onChange, help }: ImagePicke
     setError("");
     try {
       const formData = new FormData();
-      Array.from(files).forEach((file) => formData.append("file", file));
+      for (const rawFile of Array.from(files)) {
+        const file = await compressImage(rawFile);
+        formData.append("file", file);
+      }
+
       const response = await fetch("/api/admin/media", { method: "POST", body: formData });
-      const data = (await response.json()) as {
-        ok: boolean;
-        error?: string;
-        file?: MediaItem;
-        files?: MediaItem[];
-      };
+      const text = await response.text();
+      let data: { ok: boolean; error?: string; file?: MediaItem; files?: MediaItem[] };
+      try {
+        data = JSON.parse(text);
+      } catch {
+        setError(`استجابة غير متوقعة من السيرفر (${response.status})`);
+        return;
+      }
+
       if (!response.ok || !data.ok) {
-        setError(data.error || "تعذر رفع الصورة");
+        setError(data.error || `تعذر رفع الصورة (${response.status})`);
         return;
       }
       const uploaded = data.file;
       if (uploaded) onChange(uploaded.url);
       setLibraryOpen(false);
-    } catch {
-      setError("تعذر رفع الصورة");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "تعذر رفع الصورة");
     } finally {
       setUploading(false);
       if (inputRef.current) inputRef.current.value = "";
