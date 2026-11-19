@@ -105,7 +105,7 @@ export default function MediaManager({ initial }: { initial: MediaItem[] }) {
           ref={inputRef}
           type="file"
           multiple
-          accept="image/jpeg,image/png,image/webp,image/gif,image/svg+xml,image/avif"
+          accept="image/*"
           className="hidden"
           onChange={(event) => void upload(event.target.files)}
         />

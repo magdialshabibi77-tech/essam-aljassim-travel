@@ -126,7 +126,7 @@ export default function ImagePicker({ label, value, onChange, help }: ImagePicke
       <input
         ref={inputRef}
         type="file"
-        accept="image/jpeg,image/png,image/webp,image/gif,image/svg+xml,image/avif"
+        accept="image/*"
         multiple
         className="hidden"
         onChange={(event) => void upload(event.target.files)}
